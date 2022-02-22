@@ -11,18 +11,29 @@ enum ACTION {
 }
 interface IAction {
 	type: ACTION;
-	payload: any;
+	payload: {
+		operation?: string;
+		digit?: string;
+	};
 }
 
 interface IState {
 	currentOperand: string;
 	previousOperand: string;
 	operation: string;
+	overwrite?: boolean;
 }
 
 function reducer(state: IState, { type, payload }: IAction): IState {
 	switch (type) {
 		case ACTION.addDigit:
+			if (state.overwrite) {
+				return {
+					...state,
+					currentOperand: payload.digit!,
+					overwrite: false,
+				};
+			}
 			if (payload.digit === "0" && state.currentOperand === "0") return state;
 			if (payload.digit === "." && state.currentOperand.includes(".")) return state;
 
@@ -32,27 +43,67 @@ function reducer(state: IState, { type, payload }: IAction): IState {
 			};
 		case ACTION.chooseOperation:
 			if (state.currentOperand === "" && state.previousOperand === "") return state;
+
+			if (state.currentOperand === "") {
+				return {
+					...state,
+					operation: payload.operation!,
+				};
+			}
+
 			if (state.previousOperand === "")
 				return {
 					...state,
-					operation: payload.operation,
+					operation: payload.operation!,
 					previousOperand: state.currentOperand,
 					currentOperand: "",
 				};
 			return {
 				...state,
 				previousOperand: evaluate(state),
-				operation: payload.operation,
+				operation: payload.operation!,
 				currentOperand: "",
+			};
+		case ACTION.deleteDigit:
+			if (state.overwrite)
+				return {
+					...state,
+					currentOperand: "",
+					overwrite: false,
+				};
+			if (state.currentOperand === "") return state;
+			if (state.currentOperand.length === 1)
+				return {
+					...state,
+					currentOperand: "",
+				};
+			return {
+				...state,
+				currentOperand: state.currentOperand.slice(0, -1),
 			};
 		case ACTION.clear:
 			return { currentOperand: "", previousOperand: "", operation: "" };
+		case ACTION.evaluate:
+			if (
+				state.operation === "" ||
+				state.currentOperand === "" ||
+				state.previousOperand === ""
+			) {
+				return state;
+			}
+			return {
+				...state,
+				overwrite: true,
+				previousOperand: "",
+				operation: "",
+				currentOperand: evaluate(state),
+			};
 		default:
 			return state;
 	}
 }
 
-function evaluate({ currentOperand, previousOperand, operation }: IState) {
+function evaluate({ currentOperand, previousOperand, operation }: IState): string {
 	const prev = parseFloat(previousOperand);
 	const currnet = parseFloat(currentOperand);
 	if (isNaN(prev) || isNaN(currnet)) return "";
@@ -96,6 +147,17 @@ function OperationButton({
 	);
 }
 
+const INTEGER_FORMATTER = new Intl.NumberFormat("en-us", {
+	maximumFractionDigits: 0,
+});
+
+function formatOperand(operand: string) {
+	if (operand === "") return;
+	const [integer, decimal] = operand.split(".");
+	if (!decimal) return INTEGER_FORMATTER.format(parseInt(integer));
+	return `${INTEGER_FORMATTER.format(parseInt(integer))}.${decimal}`;
+}
+
 function DigitButton({
 	dispatch,
 	digit,
@@ -124,18 +186,18 @@ function App() {
 		<div className="calculator-grid">
 			<div className="output" id="display">
 				<div className="previous-operand">
-					{previousOperand} {operation}
+					{formatOperand(previousOperand)} {operation}
 				</div>
-				<div className="current-operand">{currentOperand}</div>
+				<div className="current-operand">{formatOperand(currentOperand)}</div>
 			</div>
 			<button
 				className="span-two"
 				id="clear"
-				onClick={() => dispatch({ type: ACTION.clear, payload: "" })}
+				onClick={() => dispatch({ type: ACTION.clear, payload: {} })}
 			>
 				AC
 			</button>
-			<button className="">DEL</button>
+			<button onClick={() => dispatch({ type: ACTION.deleteDigit, payload: {} })}>DEL</button>
 			<OperationButton operation={"/"} dispatch={dispatch} id="divide" />
 			<DigitButton digit={"1"} dispatch={dispatch} id="one" />
 			<DigitButton digit={"2"} dispatch={dispatch} id="two" />
@@ -151,7 +213,11 @@ function App() {
 			<OperationButton operation={"-"} dispatch={dispatch} id="subtract" />
 			<DigitButton digit={"."} dispatch={dispatch} id="decimal" />
 			<DigitButton digit={"0"} dispatch={dispatch} id="zero" />
-			<button className="span-two" id="equals">
+			<button
+				className="span-two"
+				id="equals"
+				onClick={() => dispatch({ type: ACTION.evaluate, payload: {} })}
+			>
 				=
 			</button>
 		</div>
